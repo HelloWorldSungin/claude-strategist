@@ -138,6 +138,15 @@ export interface DbConversation {
   created_at: string;
 }
 
+export interface DbCronLog {
+  id: number;
+  job_name: string;
+  status: "success" | "failure";
+  duration_ms: number | null;
+  error_message: string | null;
+  created_at: string;
+}
+
 export interface DbMemory {
   id: number;
   type: "fact" | "observation" | "lesson" | "preference";

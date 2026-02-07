@@ -1,0 +1,9 @@
+[Unit]
+Description=Claude Strategist — Trade Review Timer (every 6 hours, offset 30min)
+
+[Timer]
+OnCalendar=*-*-* 0/6:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

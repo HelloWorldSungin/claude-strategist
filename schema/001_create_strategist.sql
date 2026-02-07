@@ -82,7 +82,17 @@ CREATE TABLE IF NOT EXISTS strategist.memory (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS strategist.cron_log (
+    id SERIAL PRIMARY KEY,
+    job_name TEXT NOT NULL,
+    status TEXT NOT NULL,
+    duration_ms INT,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Indexes
+CREATE INDEX IF NOT EXISTS idx_strategist_cron_log_job ON strategist.cron_log(job_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_strategist_positions_strategy ON strategist.positions(strategy_id);
 CREATE INDEX IF NOT EXISTS idx_strategist_positions_status ON strategist.positions(status);
 CREATE INDEX IF NOT EXISTS idx_strategist_regime_log_time ON strategist.regime_log(assessed_at);

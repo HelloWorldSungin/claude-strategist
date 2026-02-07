@@ -6,7 +6,7 @@
  */
 
 import { readState } from "./state";
-import { getRecentConversations } from "./db";
+import { getRecentConversations, getMemories } from "./db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -85,6 +85,18 @@ export async function buildPrompt(userMessage: string): Promise<string> {
         `\n  Win rate: ${perf.win_rate !== null ? (perf.win_rate * 100).toFixed(1) + "%" : "N/A"}` +
         `\n  Total P&L: ${perf.total_pnl_pct !== null ? (perf.total_pnl_pct >= 0 ? "+" : "") + perf.total_pnl_pct.toFixed(2) + "%" : "N/A"}`
     );
+  }
+
+  // Inject long-term memory (lessons + facts)
+  const memories = await getMemories(undefined, 10);
+  const relevantMemories = memories.filter(
+    (m) => m.type === "lesson" || m.type === "fact"
+  );
+  if (relevantMemories.length > 0) {
+    const memList = relevantMemories
+      .map((m) => `  - [${m.type}] ${m.content}`)
+      .join("\n");
+    sections.push(`\nLong-term memory:\n${memList}`);
   }
 
   // Inject recent conversation history for continuity

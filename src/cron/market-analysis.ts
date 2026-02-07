@@ -12,9 +12,11 @@ import { buildCronPrompt } from "../helpers/prompt-builder";
 import { runClaudeLocal } from "../helpers/claude-runner";
 import { readState, writeState } from "../helpers/state";
 import { sendDiscord } from "../helpers/discord";
+import { logCronRun } from "../helpers/db";
 import type { MarketRegimeState } from "../types";
 
 async function main() {
+  const startTime = Date.now();
   console.log(`[market-analysis] Starting at ${new Date().toISOString()}`);
 
   // Read previous regime for comparison
@@ -37,6 +39,12 @@ async function main() {
 
   if (result.error) {
     console.error(`[market-analysis] Failed: ${result.error}`);
+    await logCronRun({
+      job_name: "market-analysis",
+      status: "failure",
+      duration_ms: Date.now() - startTime,
+      error_message: result.error,
+    });
     await sendDiscord(
       `Market analysis failed: ${result.error.substring(0, 200)}`
     );
@@ -57,12 +65,23 @@ async function main() {
     );
   }
 
+  await logCronRun({
+    job_name: "market-analysis",
+    status: "success",
+    duration_ms: Date.now() - startTime,
+  });
+
   console.log(
     `[market-analysis] Regime: ${newRegime?.regime || "unknown"} | Done`
   );
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[market-analysis] Fatal:", err);
+  await logCronRun({
+    job_name: "market-analysis",
+    status: "failure",
+    error_message: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

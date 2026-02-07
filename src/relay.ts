@@ -34,7 +34,7 @@ import { buildPrompt, buildResearchPrompt } from "./helpers/prompt-builder";
 import { runClaudeLocal, runClaudeRemote } from "./helpers/claude-runner";
 import { sendDiscordChunked } from "./helpers/discord";
 import { readState, writeState } from "./helpers/state";
-import { logConversation } from "./helpers/db";
+import { logConversation, getStrategy } from "./helpers/db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -529,6 +529,7 @@ async function handleStrategies(
 
 /**
  * /activate <strategy_id> — Activate a strategy for paper trading.
+ * Pre-validates strategy existence, status, and backtest quality.
  */
 async function handleActivate(
   interaction: ChatInputCommandInteraction
@@ -543,8 +544,53 @@ async function handleActivate(
   });
   await interaction.deferReply();
 
+  // Pre-activation validation
+  const strategy = await getStrategy(strategyId);
+
+  if (!strategy) {
+    await interaction.editReply(
+      `Strategy \`${strategyId}\` not found. Use /strategies to see available strategies.`
+    );
+    return;
+  }
+
+  if (strategy.status === "paper" || strategy.status === "live") {
+    await interaction.editReply(
+      `Strategy \`${strategyId}\` is already active (status: ${strategy.status}).`
+    );
+    return;
+  }
+
+  if (!strategy.backtest_results) {
+    await interaction.editReply(
+      `Strategy \`${strategyId}\` has no backtest results. Run \`/research\` first to validate it.`
+    );
+    return;
+  }
+
+  // Check backtest quality
+  let qualityWarning = "";
+  try {
+    const bt = JSON.parse(strategy.backtest_results);
+    const winRate = bt.win_rate ?? bt.winRate ?? null;
+    const sharpe = bt.sharpe ?? bt.sharpe_ratio ?? null;
+    const warnings: string[] = [];
+    if (winRate !== null && winRate < 0.52) {
+      warnings.push(`win rate ${(winRate * 100).toFixed(1)}% (< 52%)`);
+    }
+    if (sharpe !== null && sharpe < 0.5) {
+      warnings.push(`Sharpe ${sharpe.toFixed(2)} (< 0.5)`);
+    }
+    if (warnings.length > 0) {
+      qualityWarning =
+        ` Note: activating despite poor backtest metrics — ${warnings.join(", ")}.`;
+    }
+  } catch {
+    // backtest_results wasn't valid JSON — proceed anyway
+  }
+
   const prompt = await buildPrompt(
-    `Activate strategy '${strategyId}' for paper trading. ` +
+    `Activate strategy '${strategyId}' for paper trading.${qualityWarning} ` +
       `UPDATE strategist.strategies SET status = 'paper', updated_at = NOW() WHERE strategy_id = '${strategyId}'. ` +
       `Then refresh strategist/state/active-strategies.json with all active strategies. ` +
       `Confirm activation with the strategy details.`

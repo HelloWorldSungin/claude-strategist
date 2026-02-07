@@ -79,3 +79,130 @@ export async function getRecentConversations(
     return [];
   }
 }
+
+/**
+ * Save a memory entry to strategist.memory table.
+ */
+export async function saveMemory(params: {
+  type: "fact" | "observation" | "lesson" | "preference";
+  content: string;
+  context?: string;
+  confidence?: number;
+  source?: string;
+}): Promise<void> {
+  try {
+    const content = params.content.replace(/'/g, "''").substring(0, 5000);
+    const context = params.context
+      ? `'${params.context.replace(/'/g, "''").substring(0, 1000)}'`
+      : "NULL";
+    const confidence = params.confidence ?? 1.0;
+    const source = params.source
+      ? `'${params.source.replace(/'/g, "''")}'`
+      : "NULL";
+
+    await query(
+      `INSERT INTO strategist.memory (type, content, context, confidence, source) ` +
+        `VALUES ('${params.type}', '${content}', ${context}, ${confidence}, ${source})`
+    );
+  } catch (err) {
+    console.error("[db] Failed to save memory:", err);
+  }
+}
+
+/**
+ * Fetch memories from strategist.memory table.
+ * Returns highest-confidence entries, optionally filtered by type.
+ */
+export async function getMemories(
+  type?: string,
+  limit: number = 10
+): Promise<Array<{ type: string; content: string; confidence: number }>> {
+  try {
+    const typeFilter = type ? `WHERE type = '${type}'` : "";
+    const result = await query(
+      `SELECT type, content, confidence FROM strategist.memory ` +
+        `${typeFilter} ORDER BY confidence DESC, created_at DESC LIMIT ${limit}`
+    );
+
+    if (!result) return [];
+
+    return result.split("\n").map((row) => {
+      const [memType, ...rest] = row.split("|");
+      const confidence = parseFloat(rest.pop() || "1.0");
+      const content = rest.join("|");
+      return { type: memType, content, confidence };
+    });
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Fetch a strategy by strategy_id for validation.
+ */
+export async function getStrategy(
+  strategyId: string
+): Promise<{
+  strategy_id: string;
+  status: string;
+  backtest_results: string | null;
+} | null> {
+  try {
+    const escaped = strategyId.replace(/'/g, "''");
+    const result = await query(
+      `SELECT strategy_id, status, backtest_results::text ` +
+        `FROM strategist.strategies WHERE strategy_id = '${escaped}'`
+    );
+
+    if (!result) return null;
+
+    const [strategy_id, status, ...rest] = result.split("|");
+    const backtest_results = rest.join("|") || null;
+    return { strategy_id, status, backtest_results };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Log a cron job execution to strategist.cron_log table.
+ */
+export async function logCronRun(params: {
+  job_name: string;
+  status: "success" | "failure";
+  duration_ms?: number;
+  error_message?: string;
+}): Promise<void> {
+  try {
+    const duration = params.duration_ms ?? "NULL";
+    const errorMsg = params.error_message
+      ? `'${params.error_message.replace(/'/g, "''").substring(0, 2000)}'`
+      : "NULL";
+
+    await query(
+      `INSERT INTO strategist.cron_log (job_name, status, duration_ms, error_message) ` +
+        `VALUES ('${params.job_name}', '${params.status}', ${duration}, ${errorMsg})`
+    );
+  } catch (err) {
+    console.error("[db] Failed to log cron run:", err);
+  }
+}
+
+/**
+ * Get the last successful run time for a cron job.
+ * Returns ISO timestamp string or null if never succeeded.
+ */
+export async function getLastCronSuccess(
+  jobName: string
+): Promise<string | null> {
+  try {
+    const result = await query(
+      `SELECT created_at FROM strategist.cron_log ` +
+        `WHERE job_name = '${jobName}' AND status = 'success' ` +
+        `ORDER BY created_at DESC LIMIT 1`
+    );
+    return result || null;
+  } catch {
+    return null;
+  }
+}

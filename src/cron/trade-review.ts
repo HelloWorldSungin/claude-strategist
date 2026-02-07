@@ -4,6 +4,7 @@
  * Runs every 6 hours. Spawns Claude to review recent trades,
  * calculate performance metrics, and write state/performance-log.json.
  * Sends Discord summary for notable findings.
+ * Extracts lessons into strategist.memory table.
  *
  * Schedule: 30 */6 * * *
  */
@@ -11,8 +12,10 @@
 import { buildCronPrompt } from "../helpers/prompt-builder";
 import { runClaudeLocal } from "../helpers/claude-runner";
 import { sendDiscord } from "../helpers/discord";
+import { logCronRun } from "../helpers/db";
 
 async function main() {
+  const startTime = Date.now();
   console.log(`[trade-review] Starting at ${new Date().toISOString()}`);
 
   const prompt = await buildCronPrompt(
@@ -24,13 +27,23 @@ async function main() {
       "5. Write JSON to strategist/state/performance-log.json:\n" +
       "   {total_trades, open_positions, win_rate, total_pnl_pct, recent_trades, summary, reviewed_at}\n" +
       "6. If there are notable findings (big win, big loss, regime mismatch), output a 2-3 sentence summary\n" +
-      "7. If no trades exist yet, write empty defaults and say 'No trades to review'"
+      "7. If no trades exist yet, write empty defaults and say 'No trades to review'\n" +
+      "8. If there are notable lessons from this review (patterns, regime insights, strategy performance), " +
+      "save them to the strategist.memory table using psql: " +
+      "INSERT INTO strategist.memory (type, content, context, confidence, source) " +
+      "VALUES ('lesson', '<lesson text>', 'trade-review', 0.8, 'cron/trade-review')"
   );
 
   const result = await runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 });
 
   if (result.error) {
     console.error(`[trade-review] Failed: ${result.error}`);
+    await logCronRun({
+      job_name: "trade-review",
+      status: "failure",
+      duration_ms: Date.now() - startTime,
+      error_message: result.error,
+    });
     await sendDiscord(
       `Trade review failed: ${result.error.substring(0, 200)}`
     );
@@ -51,10 +64,21 @@ async function main() {
     await sendDiscord(`Trade Review:\n${summary}`);
   }
 
+  await logCronRun({
+    job_name: "trade-review",
+    status: "success",
+    duration_ms: Date.now() - startTime,
+  });
+
   console.log("[trade-review] Done");
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   console.error("[trade-review] Fatal:", err);
+  await logCronRun({
+    job_name: "trade-review",
+    status: "failure",
+    error_message: err instanceof Error ? err.message : String(err),
+  });
   process.exit(1);
 });

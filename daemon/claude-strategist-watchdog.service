@@ -1,0 +1,22 @@
+[Unit]
+Description=Claude Strategist — Strategy Watchdog Cron
+After=network.target
+
+[Service]
+Type=oneshot
+User=strategist
+WorkingDirectory=/opt/ArkNode-AI/projects/trading-signal-ai/strategist
+ExecStart=/home/strategist/.bun/bin/bun run src/cron/strategy-watchdog.ts
+
+# Environment
+Environment=HOME=/home/strategist
+Environment=PATH=/home/strategist/.bun/bin:/home/strategist/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/opt/ArkNode-AI/projects/trading-signal-ai/strategist/.env
+
+# Timeout (watchdog is lightweight, no Claude spawn)
+TimeoutStartSec=60
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-strategist-watchdog
