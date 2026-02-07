@@ -4,15 +4,15 @@ After=network.target
 
 [Service]
 Type=simple
-User=root
+User=strategist
 WorkingDirectory=/opt/ArkNode-AI/projects/trading-signal-ai/strategist
-ExecStart=/root/.bun/bin/bun run src/relay.ts
+ExecStart=/home/strategist/.bun/bin/bun run src/relay.ts
 Restart=always
 RestartSec=10
 
 # Environment
-Environment=HOME=/root
-Environment=PATH=/root/.bun/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=HOME=/home/strategist
+Environment=PATH=/home/strategist/.bun/bin:/home/strategist/.local/bin:/usr/local/bin:/usr/bin:/bin
 EnvironmentFile=/opt/ArkNode-AI/projects/trading-signal-ai/strategist/.env
 
 # Logging

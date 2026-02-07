@@ -10,13 +10,12 @@ import { spawn } from "bun";
 import { resolve, dirname } from "path";
 import type { ClaudeRunResult, ClaudeRunMode } from "../types";
 
-// Project root = two directories up from strategist/src/helpers/
-// strategist/ lives inside trading-signal-ai/
-const STRATEGIST_DIR = dirname(dirname(dirname(import.meta.dir)));
+// strategist/src/helpers/ → up 2 = strategist/ → up 1 = trading-signal-ai/
+const STRATEGIST_DIR = dirname(dirname(import.meta.dir));
 const PROJECT_ROOT =
   process.env.PROJECT_ROOT || resolve(STRATEGIST_DIR, "..");
 
-const CLAUDE_PATH = process.env.CLAUDE_PATH || "claude";
+const CLAUDE_PATH = process.env.CLAUDE_PATH || "/home/strategist/.local/bin/claude";
 const CT110_HOST = process.env.CT110_HOST || "192.168.68.110";
 const CT110_PROJECT_ROOT =
   process.env.CT110_PROJECT_ROOT ||
@@ -35,7 +34,7 @@ export async function runClaudeLocal(
   const startTime = Date.now();
   const timeout = options?.timeoutMs || TIMEOUT_MS;
 
-  const args = [CLAUDE_PATH, "-p", prompt, "--output-format", "text"];
+  const args = [CLAUDE_PATH, "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
 
   if (options?.allowedTools) {
     for (const tool of options.allowedTools) {
@@ -139,7 +138,7 @@ export async function runClaudeRemote(
 
   try {
     const proc = spawn(
-      ["ssh", CT110_HOST, remoteCmd],
+      ["ssh", `root@${CT110_HOST}`, remoteCmd],
       {
         stdout: "pipe",
         stderr: "pipe",
