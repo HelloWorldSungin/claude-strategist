@@ -17,6 +17,7 @@ const PROJECT_ROOT =
 
 const CLAUDE_PATH = process.env.CLAUDE_PATH || "/home/strategist/.local/bin/claude";
 const CT110_HOST = process.env.CT110_HOST || "192.168.68.110";
+const CT110_USER = process.env.CT110_USER || "researcher";
 const CT110_PROJECT_ROOT =
   process.env.CT110_PROJECT_ROOT ||
   "/opt/ArkNode-AI/projects/trading-signal-ai";
@@ -121,7 +122,7 @@ export async function runClaudeRemote(
   console.log(`[claude-runner] Writing prompt to CT110:${tmpFile}`);
   try {
     const writeProc = spawn(
-      ["ssh", `root@${CT110_HOST}`, `cat > ${tmpFile}`],
+      ["ssh", `${CT110_USER}@${CT110_HOST}`, `cat > ${tmpFile}`],
       { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
     );
     writeProc.stdin.write(prompt);
@@ -159,7 +160,7 @@ export async function runClaudeRemote(
 
   try {
     const proc = spawn(
-      ["ssh", `root@${CT110_HOST}`, remoteCmd],
+      ["ssh", `${CT110_USER}@${CT110_HOST}`, remoteCmd],
       {
         stdout: "pipe",
         stderr: "pipe",
