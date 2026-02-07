@@ -1,10 +1,13 @@
 {
-  "name": "claude-telegram-relay",
+  "name": "claude-strategist",
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "start": "bun run src/relay.ts",
-    "dev": "bun run --watch src/relay.ts"
+    "dev": "bun run --watch src/relay.ts",
+    "cron:market": "bun run src/cron/market-analysis.ts",
+    "cron:review": "bun run src/cron/trade-review.ts",
+    "cron:watchdog": "bun run src/cron/strategy-watchdog.ts"
   },
   "dependencies": {
     "grammy": "^1.21.1"

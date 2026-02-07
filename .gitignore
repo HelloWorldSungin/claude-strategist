@@ -8,9 +8,14 @@ node_modules/
 # Bun
 bun.lockb
 
+# Runtime state (cached, DB is source of truth)
+state/
+
+# Logs
+logs/
+
 # Runtime files
 *.lock
-*.log
 temp/
 uploads/
 session.json

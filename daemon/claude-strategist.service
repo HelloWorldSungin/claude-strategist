@@ -1,0 +1,44 @@
+[Unit]
+Description=Claude Master Strategist - BTC/ETH Trading Bot
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/ArkNode-AI/projects/trading-signal-ai/strategist
+ExecStart=/root/.bun/bin/bun run src/relay.ts
+Restart=always
+RestartSec=10
+
+# Environment
+Environment=HOME=/root
+Environment=PATH=/root/.bun/bin:/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=/opt/ArkNode-AI/projects/trading-signal-ai/strategist/.env
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=claude-strategist
+
+[Install]
+WantedBy=multi-user.target
+
+# SETUP INSTRUCTIONS (CT100):
+#
+# 1. Copy to systemd:
+#    cp daemon/claude-strategist.service /etc/systemd/system/
+#
+# 2. Reload systemd:
+#    systemctl daemon-reload
+#
+# 3. Enable (start on boot):
+#    systemctl enable claude-strategist
+#
+# 4. Start:
+#    systemctl start claude-strategist
+#
+# 5. Check status:
+#    systemctl status claude-strategist
+#
+# 6. View logs:
+#    journalctl -u claude-strategist -f
