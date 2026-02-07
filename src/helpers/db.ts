@@ -1,34 +1,20 @@
 /**
  * Database helpers for strategist schema.
- * Uses psql CLI since we're in Bun (no native pg driver needed).
+ * Uses pg driver with parameterized queries to prevent SQL injection.
  */
 
-import { spawn } from "bun";
+import { Pool } from "pg";
 
 const DATABASE_URL =
   process.env.DATABASE_URL ||
   "postgresql://trading_app:trading_app_2026@192.168.68.120:5433/trading";
 
-/**
- * Run a SQL query via psql. Returns stdout on success, throws on failure.
- */
-async function query(sql: string): Promise<string> {
-  const proc = spawn(
-    ["psql", DATABASE_URL, "-t", "-A", "-c", sql],
-    { stdout: "pipe", stderr: "pipe" }
-  );
-
-  const stdout = await new Response(proc.stdout).text();
-  const stderr = await new Response(proc.stderr).text();
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    console.error(`[db] Query failed: ${stderr.trim()}`);
-    throw new Error(`psql error: ${stderr.trim()}`);
-  }
-
-  return stdout.trim();
-}
+const pool = new Pool({
+  connectionString: DATABASE_URL,
+  max: 5,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
 /**
  * Log a conversation message (user or assistant) to strategist.conversations.
@@ -40,14 +26,15 @@ export async function logConversation(params: {
   duration_ms?: number | null;
 }): Promise<void> {
   try {
-    // Escape single quotes for SQL
-    const content = params.content.replace(/'/g, "''").substring(0, 10000);
-    const command = params.command ? `'${params.command}'` : "NULL";
-    const duration = params.duration_ms ?? "NULL";
-
-    await query(
-      `INSERT INTO strategist.conversations (role, content, command, duration_ms) ` +
-        `VALUES ('${params.role}', '${content}', ${command}, ${duration})`
+    await pool.query(
+      `INSERT INTO strategist.conversations (role, content, command, duration_ms)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        params.role,
+        params.content.substring(0, 10000),
+        params.command ?? null,
+        params.duration_ms ?? null,
+      ]
     );
   } catch (err) {
     console.error("[db] Failed to log conversation:", err);
@@ -62,19 +49,16 @@ export async function getRecentConversations(
   limit: number = 10
 ): Promise<Array<{ role: string; content: string; created_at: string }>> {
   try {
-    const result = await query(
-      `SELECT role, content, created_at FROM strategist.conversations ` +
-        `ORDER BY created_at DESC LIMIT ${limit}`
+    const result = await pool.query(
+      `SELECT role, content, created_at FROM strategist.conversations
+       ORDER BY created_at DESC LIMIT $1`,
+      [limit]
     );
-
-    if (!result) return [];
-
-    return result.split("\n").map((row) => {
-      const [role, ...rest] = row.split("|");
-      const created_at = rest.pop() || "";
-      const content = rest.join("|"); // content might contain |
-      return { role, content, created_at };
-    });
+    return result.rows.map((row) => ({
+      role: row.role,
+      content: row.content,
+      created_at: row.created_at.toISOString?.() ?? String(row.created_at),
+    }));
   } catch {
     return [];
   }
@@ -91,18 +75,16 @@ export async function saveMemory(params: {
   source?: string;
 }): Promise<void> {
   try {
-    const content = params.content.replace(/'/g, "''").substring(0, 5000);
-    const context = params.context
-      ? `'${params.context.replace(/'/g, "''").substring(0, 1000)}'`
-      : "NULL";
-    const confidence = params.confidence ?? 1.0;
-    const source = params.source
-      ? `'${params.source.replace(/'/g, "''")}'`
-      : "NULL";
-
-    await query(
-      `INSERT INTO strategist.memory (type, content, context, confidence, source) ` +
-        `VALUES ('${params.type}', '${content}', ${context}, ${confidence}, ${source})`
+    await pool.query(
+      `INSERT INTO strategist.memory (type, content, context, confidence, source)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [
+        params.type,
+        params.content.substring(0, 5000),
+        params.context?.substring(0, 1000) ?? null,
+        params.confidence ?? 1.0,
+        params.source ?? null,
+      ]
     );
   } catch (err) {
     console.error("[db] Failed to save memory:", err);
@@ -118,20 +100,25 @@ export async function getMemories(
   limit: number = 10
 ): Promise<Array<{ type: string; content: string; confidence: number }>> {
   try {
-    const typeFilter = type ? `WHERE type = '${type}'` : "";
-    const result = await query(
-      `SELECT type, content, confidence FROM strategist.memory ` +
-        `${typeFilter} ORDER BY confidence DESC, created_at DESC LIMIT ${limit}`
-    );
-
-    if (!result) return [];
-
-    return result.split("\n").map((row) => {
-      const [memType, ...rest] = row.split("|");
-      const confidence = parseFloat(rest.pop() || "1.0");
-      const content = rest.join("|");
-      return { type: memType, content, confidence };
-    });
+    let result;
+    if (type) {
+      result = await pool.query(
+        `SELECT type, content, confidence FROM strategist.memory
+         WHERE type = $1 ORDER BY confidence DESC, created_at DESC LIMIT $2`,
+        [type, limit]
+      );
+    } else {
+      result = await pool.query(
+        `SELECT type, content, confidence FROM strategist.memory
+         ORDER BY confidence DESC, created_at DESC LIMIT $1`,
+        [limit]
+      );
+    }
+    return result.rows.map((row) => ({
+      type: row.type,
+      content: row.content,
+      confidence: parseFloat(row.confidence),
+    }));
   } catch {
     return [];
   }
@@ -148,17 +135,18 @@ export async function getStrategy(
   backtest_results: string | null;
 } | null> {
   try {
-    const escaped = strategyId.replace(/'/g, "''");
-    const result = await query(
-      `SELECT strategy_id, status, backtest_results::text ` +
-        `FROM strategist.strategies WHERE strategy_id = '${escaped}'`
+    const result = await pool.query(
+      `SELECT strategy_id, status, backtest_results::text
+       FROM strategist.strategies WHERE strategy_id = $1`,
+      [strategyId]
     );
-
-    if (!result) return null;
-
-    const [strategy_id, status, ...rest] = result.split("|");
-    const backtest_results = rest.join("|") || null;
-    return { strategy_id, status, backtest_results };
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      strategy_id: row.strategy_id,
+      status: row.status,
+      backtest_results: row.backtest_results ?? null,
+    };
   } catch {
     return null;
   }
@@ -174,14 +162,15 @@ export async function logCronRun(params: {
   error_message?: string;
 }): Promise<void> {
   try {
-    const duration = params.duration_ms ?? "NULL";
-    const errorMsg = params.error_message
-      ? `'${params.error_message.replace(/'/g, "''").substring(0, 2000)}'`
-      : "NULL";
-
-    await query(
-      `INSERT INTO strategist.cron_log (job_name, status, duration_ms, error_message) ` +
-        `VALUES ('${params.job_name}', '${params.status}', ${duration}, ${errorMsg})`
+    await pool.query(
+      `INSERT INTO strategist.cron_log (job_name, status, duration_ms, error_message)
+       VALUES ($1, $2, $3, $4)`,
+      [
+        params.job_name,
+        params.status,
+        params.duration_ms ?? null,
+        params.error_message?.substring(0, 2000) ?? null,
+      ]
     );
   } catch (err) {
     console.error("[db] Failed to log cron run:", err);
@@ -196,13 +185,23 @@ export async function getLastCronSuccess(
   jobName: string
 ): Promise<string | null> {
   try {
-    const result = await query(
-      `SELECT created_at FROM strategist.cron_log ` +
-        `WHERE job_name = '${jobName}' AND status = 'success' ` +
-        `ORDER BY created_at DESC LIMIT 1`
+    const result = await pool.query(
+      `SELECT created_at FROM strategist.cron_log
+       WHERE job_name = $1 AND status = 'success'
+       ORDER BY created_at DESC LIMIT 1`,
+      [jobName]
     );
-    return result || null;
+    if (result.rows.length === 0) return null;
+    const created_at = result.rows[0].created_at;
+    return created_at.toISOString?.() ?? String(created_at);
   } catch {
     return null;
   }
+}
+
+/**
+ * Gracefully close the connection pool. Call on process exit.
+ */
+export async function closePool(): Promise<void> {
+  await pool.end();
 }

@@ -34,7 +34,7 @@ import { buildPrompt, buildResearchPrompt } from "./helpers/prompt-builder";
 import { runClaudeLocal, runClaudeRemote } from "./helpers/claude-runner";
 import { sendDiscordChunked } from "./helpers/discord";
 import { readState, writeState } from "./helpers/state";
-import { logConversation, getStrategy } from "./helpers/db";
+import { logConversation, getStrategy, closePool } from "./helpers/db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -95,11 +95,13 @@ process.on("exit", () => {
 });
 process.on("SIGINT", async () => {
   await releaseLock();
+  await closePool();
   client.destroy();
   process.exit(0);
 });
 process.on("SIGTERM", async () => {
   await releaseLock();
+  await closePool();
   client.destroy();
   process.exit(0);
 });
@@ -190,13 +192,62 @@ const client = new Client({
 });
 
 // ============================================================
-// SECURITY: Check authorized user
+// SECURITY: Check authorized user (fail-closed)
 // ============================================================
 
 function isAuthorized(userId: string): boolean {
-  if (!ALLOWED_USER_ID) return true;
+  if (!ALLOWED_USER_ID) {
+    throw new Error("DISCORD_USER_ID not set — refusing all requests (fail-closed)");
+  }
   return userId === ALLOWED_USER_ID;
 }
+
+// ============================================================
+// INPUT VALIDATION
+// ============================================================
+
+const STRATEGY_ID_RE = /^[a-zA-Z0-9_-]{1,50}$/;
+
+function validateStrategyId(id: string): string | null {
+  if (!STRATEGY_ID_RE.test(id)) {
+    return "Invalid strategy_id. Use only letters, numbers, hyphens, underscores (max 50 chars).";
+  }
+  return null;
+}
+
+function validateTextInput(text: string, maxLen: number, fieldName: string): string | null {
+  if (text.length > maxLen) {
+    return `${fieldName} too long (max ${maxLen} chars, got ${text.length}).`;
+  }
+  return null;
+}
+
+// ============================================================
+// RATE LIMITING: Sliding window for Claude spawns
+// ============================================================
+
+const RATE_LIMIT_WINDOW_MS = 60_000;
+const RATE_LIMIT_MAX = 5;
+const claudeSpawnTimestamps: number[] = [];
+
+function checkRateLimit(): boolean {
+  const now = Date.now();
+  // Remove expired entries
+  while (claudeSpawnTimestamps.length > 0 && claudeSpawnTimestamps[0] <= now - RATE_LIMIT_WINDOW_MS) {
+    claudeSpawnTimestamps.shift();
+  }
+  if (claudeSpawnTimestamps.length >= RATE_LIMIT_MAX) {
+    return false;
+  }
+  claudeSpawnTimestamps.push(now);
+  return true;
+}
+
+// ============================================================
+// RESEARCH QUEUE DEPTH LIMIT
+// ============================================================
+
+let activeResearchCount = 0;
 
 // ============================================================
 // HELPERS
@@ -426,6 +477,14 @@ async function handleStatus(
 async function handleRegime(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   console.log("Command: /regime");
   await logConversation({
     role: "user",
@@ -464,6 +523,14 @@ async function handleRegime(
 async function handlePerformance(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   console.log("Command: /performance");
   await logConversation({
     role: "user",
@@ -499,6 +566,14 @@ async function handlePerformance(
 async function handleStrategies(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   console.log("Command: /strategies");
   await logConversation({
     role: "user",
@@ -535,6 +610,20 @@ async function handleActivate(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
   const strategyId = interaction.options.getString("strategy_id", true);
+
+  const idError = validateStrategyId(strategyId);
+  if (idError) {
+    await interaction.reply({ content: idError, ephemeral: true });
+    return;
+  }
+
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
 
   console.log(`Command: /activate ${strategyId}`);
   await logConversation({
@@ -619,6 +708,28 @@ async function handleResearch(
 ): Promise<void> {
   const description = interaction.options.getString("description", true);
 
+  const descError = validateTextInput(description, 500, "Description");
+  if (descError) {
+    await interaction.reply({ content: descError, ephemeral: true });
+    return;
+  }
+
+  if (activeResearchCount >= 1) {
+    await interaction.reply({
+      content: "Research already in progress. Please wait for it to complete.",
+      ephemeral: true,
+    });
+    return;
+  }
+
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
+
   console.log(`Command: /research ${description}`);
   await logConversation({
     role: "user",
@@ -642,6 +753,7 @@ async function handleResearch(
   );
 
   // Run async — don't block the relay
+  activeResearchCount++;
   (async () => {
     try {
       const prompt = buildResearchPrompt(description);
@@ -664,6 +776,8 @@ async function handleResearch(
       const errMsg =
         error instanceof Error ? error.message : "Unknown error";
       await sendDiscordChunked(`Research error: ${errMsg}`);
+    } finally {
+      activeResearchCount--;
     }
   })();
 }
@@ -675,6 +789,20 @@ async function handleAsk(
   interaction: ChatInputCommandInteraction
 ): Promise<void> {
   const question = interaction.options.getString("question", true);
+
+  const qError = validateTextInput(question, 2000, "Question");
+  if (qError) {
+    await interaction.reply({ content: qError, ephemeral: true });
+    return;
+  }
+
+  if (!checkRateLimit()) {
+    await interaction.reply({
+      content: "Rate limited — too many Claude requests. Try again in a minute.",
+      ephemeral: true,
+    });
+    return;
+  }
 
   console.log(`Command: /ask ${question.substring(0, 80)}`);
   await logConversation({
@@ -779,6 +907,17 @@ client.on("messageCreate", async (message: Message) => {
   // Handle plain text
   const text = message.content;
   if (!text || text.trim().length === 0) return;
+
+  const msgError = validateTextInput(text, 2000, "Message");
+  if (msgError) {
+    await message.reply(msgError);
+    return;
+  }
+
+  if (!checkRateLimit()) {
+    await message.reply("Rate limited — too many Claude requests. Try again in a minute.");
+    return;
+  }
 
   console.log(`Message: ${text.substring(0, 80)}...`);
   await logConversation({ role: "user", content: text });

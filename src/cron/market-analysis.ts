@@ -13,6 +13,7 @@ import { runClaudeLocal } from "../helpers/claude-runner";
 import { readState, writeState } from "../helpers/state";
 import { sendDiscord } from "../helpers/discord";
 import { logCronRun } from "../helpers/db";
+import { withRetry } from "../helpers/retry";
 import type { MarketRegimeState } from "../types";
 
 async function main() {
@@ -35,7 +36,10 @@ async function main() {
       "7. Output ONLY the JSON (no extra text)"
   );
 
-  const result = await runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 });
+  const result = await withRetry(
+    () => runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 }),
+    { label: "market-analysis", maxRetries: 3, baseDelayMs: 5000 }
+  );
 
   if (result.error) {
     console.error(`[market-analysis] Failed: ${result.error}`);

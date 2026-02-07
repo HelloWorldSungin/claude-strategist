@@ -13,6 +13,7 @@ import { buildCronPrompt } from "../helpers/prompt-builder";
 import { runClaudeLocal } from "../helpers/claude-runner";
 import { sendDiscord } from "../helpers/discord";
 import { logCronRun } from "../helpers/db";
+import { withRetry } from "../helpers/retry";
 
 async function main() {
   const startTime = Date.now();
@@ -34,7 +35,10 @@ async function main() {
       "VALUES ('lesson', '<lesson text>', 'trade-review', 0.8, 'cron/trade-review')"
   );
 
-  const result = await runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 });
+  const result = await withRetry(
+    () => runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 }),
+    { label: "trade-review", maxRetries: 3, baseDelayMs: 5000 }
+  );
 
   if (result.error) {
     console.error(`[trade-review] Failed: ${result.error}`);
