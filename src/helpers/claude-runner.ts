@@ -99,6 +99,10 @@ export async function runClaudeLocal(
 /**
  * Run Claude CLI remotely on CT110 via SSH.
  * Used for /research commands that need GPU access.
+ *
+ * Strategy: write prompt to a temp file on CT110 via stdin,
+ * then have Claude read from it. This avoids shell escaping issues
+ * with complex prompts containing quotes, backticks, etc.
  */
 export async function runClaudeRemote(
   prompt: string,
@@ -111,20 +115,37 @@ export async function runClaudeRemote(
   const startTime = Date.now();
   const timeout = options?.timeoutMs || TIMEOUT_MS * 2; // Double timeout for remote
 
-  // Escape the prompt for SSH
-  const escapedPrompt = prompt.replace(/'/g, "'\\''");
+  const tmpFile = `/tmp/claude-prompt-${Date.now()}.txt`;
 
-  // Build the remote command
+  // Step 1: Write prompt to temp file on CT110 via stdin (avoids escaping)
+  console.log(`[claude-runner] Writing prompt to CT110:${tmpFile}`);
+  try {
+    const writeProc = spawn(
+      ["ssh", `root@${CT110_HOST}`, `cat > ${tmpFile}`],
+      { stdin: "pipe", stdout: "pipe", stderr: "pipe" }
+    );
+    writeProc.stdin.write(prompt);
+    writeProc.stdin.end();
+    const writeExit = await writeProc.exited;
+    if (writeExit !== 0) {
+      const writeErr = await new Response(writeProc.stderr).text();
+      return { output: "", exitCode: writeExit, duration_ms: Date.now() - startTime, error: `Failed to write prompt: ${writeErr}` };
+    }
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : "Unknown error";
+    return { output: "", exitCode: 1, duration_ms: Date.now() - startTime, error: `SSH write error: ${errMsg}` };
+  }
+
+  // Step 2: Build remote command that reads from the temp file
   let remoteCmd = `cd ${CT110_PROJECT_ROOT}`;
 
-  // Optionally set up a branch
   if (options?.branch) {
     remoteCmd += ` && git fetch origin && git checkout -b ${options.branch} origin/master 2>/dev/null || git checkout ${options.branch}`;
   }
 
-  // Source env and run claude
   remoteCmd += ` && source /etc/trading-signal-ai.env`;
-  remoteCmd += ` && claude -p '${escapedPrompt}' --output-format text`;
+  remoteCmd += ` && PROMPT=$(cat ${tmpFile}) && rm -f ${tmpFile}`;
+  remoteCmd += ` && claude -p "$PROMPT" --output-format text --dangerously-skip-permissions`;
 
   if (options?.allowedTools) {
     for (const tool of options.allowedTools) {
