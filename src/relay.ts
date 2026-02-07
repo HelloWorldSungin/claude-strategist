@@ -39,7 +39,8 @@ import type {
 const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || "";
 const ALLOWED_USER_ID = process.env.TELEGRAM_USER_ID || "";
 
-const STRATEGIST_DIR = dirname(dirname(import.meta.dir));
+// src/ → up 1 = strategist/
+const STRATEGIST_DIR = dirname(import.meta.dir);
 const RELAY_DIR = join(STRATEGIST_DIR, ".relay");
 const LOCK_FILE = join(RELAY_DIR, "bot.lock");
 const LOGS_DIR = join(STRATEGIST_DIR, "logs");

@@ -6,7 +6,8 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 
-const STRATEGIST_DIR = dirname(dirname(dirname(import.meta.dir)));
+// src/helpers/ → up 2 = strategist/
+const STRATEGIST_DIR = dirname(dirname(import.meta.dir));
 const STATE_DIR = join(STRATEGIST_DIR, "state");
 
 /**
