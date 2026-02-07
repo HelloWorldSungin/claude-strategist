@@ -28,8 +28,8 @@ async function main() {
       "3. Determine regime: RALLY (BTC >+3%), SELLOFF (BTC <-3%), NEUTRAL\n" +
       "4. Assess trading bias (e.g., 'favor shorts', 'favor longs', 'neutral/wait')\n" +
       "5. Write JSON to strategist/state/market-regime.json:\n" +
-      "   {regime, btc_price, btc_24h_change, eth_price, eth_24h_change, trading_bias, confidence, reasoning, assessed_at}\n" +
-      "6. INSERT INTO strategist.regime_log (assessed_at, btc_price, btc_24h_change, eth_price, eth_24h_change, regime, trading_bias, confidence, reasoning)\n" +
+      "   {regime, btc_price, btc_24h_change, eth_price, eth_24h_change, trading_bias, confidence (0.0-1.0 decimal, NOT percentage), reasoning, assessed_at}\n" +
+      "6. INSERT INTO strategist.regime_log (assessed_at, btc_price, btc_24h_change, eth_price, eth_24h_change, regime, trading_bias, confidence (0.0-1.0), reasoning)\n" +
       "7. Output ONLY the JSON (no extra text)"
   );
 

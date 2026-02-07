@@ -6,6 +6,7 @@
  */
 
 import { readState } from "./state";
+import { getRecentConversations } from "./db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -53,7 +54,7 @@ export async function buildPrompt(userMessage: string): Promise<string> {
         `\n  BTC: $${regime.btc_price?.toLocaleString()} (${regime.btc_24h_change >= 0 ? "+" : ""}${regime.btc_24h_change?.toFixed(2)}% 24h)` +
         `\n  ETH: $${regime.eth_price?.toLocaleString()} (${regime.eth_24h_change >= 0 ? "+" : ""}${regime.eth_24h_change?.toFixed(2)}% 24h)` +
         `\n  Bias: ${regime.trading_bias || "None"}` +
-        `\n  Confidence: ${((regime.confidence || 0) * 100).toFixed(0)}%`
+        `\n  Confidence: ${(((regime.confidence || 0) > 1 ? (regime.confidence || 0) / 100 : (regime.confidence || 0)) * 100).toFixed(0)}%`
     );
   }
 
@@ -84,6 +85,16 @@ export async function buildPrompt(userMessage: string): Promise<string> {
         `\n  Win rate: ${perf.win_rate !== null ? (perf.win_rate * 100).toFixed(1) + "%" : "N/A"}` +
         `\n  Total P&L: ${perf.total_pnl_pct !== null ? (perf.total_pnl_pct >= 0 ? "+" : "") + perf.total_pnl_pct.toFixed(2) + "%" : "N/A"}`
     );
+  }
+
+  // Inject recent conversation history for continuity
+  const recentConvos = await getRecentConversations(10);
+  if (recentConvos.length > 0) {
+    const history = recentConvos
+      .reverse() // chronological order
+      .map((c) => `${c.role === "user" ? "User" : "Assistant"}: ${c.content.substring(0, 500)}`)
+      .join("\n");
+    sections.push(`\nRecent conversation:\n${history}`);
   }
 
   // Add user message

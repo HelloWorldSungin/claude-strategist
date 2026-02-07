@@ -24,6 +24,7 @@ import { buildPrompt, buildResearchPrompt } from "./helpers/prompt-builder";
 import { runClaudeLocal, runClaudeRemote } from "./helpers/claude-runner";
 import { sendTelegramChunked } from "./helpers/telegram";
 import { readState, writeState } from "./helpers/state";
+import { logConversation } from "./helpers/db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -197,6 +198,7 @@ bot.command("status", async (ctx) => {
  */
 bot.command("regime", async (ctx) => {
   console.log("Command: /regime");
+  await logConversation({ role: "user", content: "/regime", command: "/regime" });
   await ctx.reply("Analyzing market regime...");
   await ctx.replyWithChatAction("typing");
 
@@ -204,8 +206,8 @@ bot.command("regime", async (ctx) => {
     "Fetch current BTC and ETH prices from the OHLCV service (localhost:8812, tickers BTC-USD and ETH-USD). " +
       "Calculate 24h change percentages. Determine regime (RALLY if BTC >+3%, SELLOFF if <-3%, NEUTRAL otherwise). " +
       "Assess trading bias for BTC and ETH. " +
-      "Write results as JSON to strategist/state/market-regime.json with fields: regime, btc_price, btc_24h_change, eth_price, eth_24h_change, trading_bias, confidence, reasoning, assessed_at. " +
-      "Also INSERT into strategist.regime_log table. " +
+      "Write results as JSON to strategist/state/market-regime.json with fields: regime, btc_price, btc_24h_change, eth_price, eth_24h_change, trading_bias, confidence (0.0-1.0 range), reasoning, assessed_at. " +
+      "Also INSERT into strategist.regime_log table (confidence as 0.0-1.0 decimal, not percentage). " +
       "Then give a 2-3 sentence trading assessment."
   );
 
@@ -214,6 +216,7 @@ bot.command("regime", async (ctx) => {
   if (result.error) {
     await ctx.reply(`Regime analysis failed: ${result.error}`);
   } else {
+    await logConversation({ role: "assistant", content: result.output, command: "/regime", duration_ms: result.duration_ms });
     await sendResponse(ctx, result.output);
   }
 });
@@ -223,6 +226,7 @@ bot.command("regime", async (ctx) => {
  */
 bot.command("performance", async (ctx) => {
   console.log("Command: /performance");
+  await logConversation({ role: "user", content: "/performance", command: "/performance" });
   await ctx.reply("Reviewing trading performance...");
   await ctx.replyWithChatAction("typing");
 
@@ -237,6 +241,7 @@ bot.command("performance", async (ctx) => {
   if (result.error) {
     await ctx.reply(`Performance review failed: ${result.error}`);
   } else {
+    await logConversation({ role: "assistant", content: result.output, command: "/performance", duration_ms: result.duration_ms });
     await sendResponse(ctx, result.output);
   }
 });
@@ -246,6 +251,7 @@ bot.command("performance", async (ctx) => {
  */
 bot.command("strategies", async (ctx) => {
   console.log("Command: /strategies");
+  await logConversation({ role: "user", content: "/strategies", command: "/strategies" });
   await ctx.reply("Fetching strategies...");
   await ctx.replyWithChatAction("typing");
 
@@ -259,6 +265,7 @@ bot.command("strategies", async (ctx) => {
   if (result.error) {
     await ctx.reply(`Strategy query failed: ${result.error}`);
   } else {
+    await logConversation({ role: "assistant", content: result.output, command: "/strategies", duration_ms: result.duration_ms });
     await sendResponse(ctx, result.output);
   }
 });
@@ -274,6 +281,7 @@ bot.command("activate", async (ctx) => {
   }
 
   console.log(`Command: /activate ${strategyId}`);
+  await logConversation({ role: "user", content: `/activate ${strategyId}`, command: "/activate" });
   await ctx.reply(`Activating strategy: ${strategyId}...`);
   await ctx.replyWithChatAction("typing");
 
@@ -289,6 +297,7 @@ bot.command("activate", async (ctx) => {
   if (result.error) {
     await ctx.reply(`Activation failed: ${result.error}`);
   } else {
+    await logConversation({ role: "assistant", content: result.output, command: "/activate", duration_ms: result.duration_ms });
     await sendResponse(ctx, result.output);
   }
 });
@@ -307,6 +316,7 @@ bot.command("research", async (ctx) => {
   }
 
   console.log(`Command: /research ${description}`);
+  await logConversation({ role: "user", content: `/research ${description}`, command: "/research" });
 
   // Generate a branch name from the description
   const branchName =
@@ -380,6 +390,7 @@ bot.on("message:text", async (ctx) => {
   if (text.startsWith("/")) return;
 
   console.log(`Message: ${text.substring(0, 80)}...`);
+  await logConversation({ role: "user", content: text });
 
   await ctx.replyWithChatAction("typing");
 
@@ -398,6 +409,7 @@ bot.on("message:text", async (ctx) => {
   if (result.error) {
     await ctx.reply(`Error: ${result.error}`);
   } else {
+    await logConversation({ role: "assistant", content: result.output, duration_ms: result.duration_ms });
     await sendResponse(ctx, result.output);
   }
 });
