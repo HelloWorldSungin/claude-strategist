@@ -153,6 +153,18 @@ export async function getStrategy(
 }
 
 /**
+ * Activate a strategy by setting its status to 'paper'.
+ * Returns true if a row was updated, false if strategy_id not found.
+ */
+export async function activateStrategy(strategyId: string): Promise<boolean> {
+  const result = await pool.query(
+    `UPDATE strategist.strategies SET status = 'paper', updated_at = NOW() WHERE strategy_id = $1`,
+    [strategyId]
+  );
+  return (result.rowCount ?? 0) > 0;
+}
+
+/**
  * Log a cron job execution to strategist.cron_log table.
  */
 export async function logCronRun(params: {

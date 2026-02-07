@@ -34,7 +34,7 @@ import { buildPrompt, buildResearchPrompt } from "./helpers/prompt-builder";
 import { runClaudeLocal, runClaudeRemote } from "./helpers/claude-runner";
 import { sendDiscordChunked } from "./helpers/discord";
 import { readState, writeState } from "./helpers/state";
-import { logConversation, getStrategy, closePool } from "./helpers/db";
+import { logConversation, getStrategy, activateStrategy, closePool } from "./helpers/db";
 import type {
   MarketRegimeState,
   ActiveStrategiesState,
@@ -678,10 +678,12 @@ async function handleActivate(
     // backtest_results wasn't valid JSON — proceed anyway
   }
 
+  // Activate directly via parameterized query — never pass SQL to Claude
+  await activateStrategy(strategyId);
+
   const prompt = await buildPrompt(
-    `Activate strategy '${strategyId}' for paper trading.${qualityWarning} ` +
-      `UPDATE strategist.strategies SET status = 'paper', updated_at = NOW() WHERE strategy_id = '${strategyId}'. ` +
-      `Then refresh strategist/state/active-strategies.json with all active strategies. ` +
+    `Strategy '${strategyId}' has been activated for paper trading.${qualityWarning} ` +
+      `Refresh strategist/state/active-strategies.json with all active strategies from the DB. ` +
       `Confirm activation with the strategy details.`
   );
 
@@ -722,64 +724,73 @@ async function handleResearch(
     return;
   }
 
-  if (!checkRateLimit()) {
-    await interaction.reply({
-      content: "Rate limited — too many Claude requests. Try again in a minute.",
-      ephemeral: true,
-    });
-    return;
-  }
-
-  console.log(`Command: /research ${description}`);
-  await logConversation({
-    role: "user",
-    content: `/research ${description}`,
-    command: "/research",
-  });
-
-  // Generate a branch name from the description
-  const branchName =
-    "strategy/" +
-    description
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .substring(0, 40);
-
-  await interaction.reply(
-    `Research request queued.\n` +
-      `Branch: \`${branchName}\`\n` +
-      `Deploying to CT110 (GPU)...\n\n` +
-      `This may take 5-10 minutes. I'll notify you when done.`
-  );
-
-  // Run async — don't block the relay
+  // Claim the research slot immediately to prevent TOCTOU race
   activeResearchCount++;
-  (async () => {
-    try {
-      const prompt = buildResearchPrompt(description);
 
-      const result = await runClaudeRemote(prompt, {
-        branch: branchName,
-        timeoutMs: 10 * 60 * 1000,
+  try {
+    if (!checkRateLimit()) {
+      await interaction.reply({
+        content: "Rate limited — too many Claude requests. Try again in a minute.",
+        ephemeral: true,
       });
-
-      if (result.error) {
-        await sendDiscordChunked(
-          `Research failed for "${description}":\n${result.error}`
-        );
-      } else {
-        await sendDiscordChunked(
-          `Research complete for "${description}":\n\n${result.output}`
-        );
-      }
-    } catch (error) {
-      const errMsg =
-        error instanceof Error ? error.message : "Unknown error";
-      await sendDiscordChunked(`Research error: ${errMsg}`);
-    } finally {
       activeResearchCount--;
+      return;
     }
-  })();
+
+    console.log(`Command: /research ${description}`);
+    await logConversation({
+      role: "user",
+      content: `/research ${description}`,
+      command: "/research",
+    });
+
+    // Generate a branch name from the description
+    const branchName =
+      "strategy/" +
+      description
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .substring(0, 40);
+
+    await interaction.reply(
+      `Research request queued.\n` +
+        `Branch: \`${branchName}\`\n` +
+        `Deploying to CT110 (GPU)...\n\n` +
+        `This may take 5-10 minutes. I'll notify you when done.`
+    );
+
+    // Run async — don't block the relay
+    // Note: activeResearchCount is already incremented; the async block owns the decrement
+    (async () => {
+      try {
+        const prompt = buildResearchPrompt(description);
+
+        const result = await runClaudeRemote(prompt, {
+          branch: branchName,
+          timeoutMs: 10 * 60 * 1000,
+        });
+
+        if (result.error) {
+          await sendDiscordChunked(
+            `Research failed for "${description}":\n${result.error}`
+          );
+        } else {
+          await sendDiscordChunked(
+            `Research complete for "${description}":\n\n${result.output}`
+          );
+        }
+      } catch (error) {
+        const errMsg =
+          error instanceof Error ? error.message : "Unknown error";
+        await sendDiscordChunked(`Research error: ${errMsg}`);
+      } finally {
+        activeResearchCount--;
+      }
+    })();
+  } catch (err) {
+    activeResearchCount--;
+    throw err;
+  }
 }
 
 /**
