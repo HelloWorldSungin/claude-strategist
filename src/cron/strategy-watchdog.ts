@@ -3,13 +3,13 @@
  *
  * Runs every hour. NO Claude spawn (cheap/fast).
  * Checks service health and state freshness.
- * Sends Telegram alert only on failure.
+ * Sends Discord alert only on failure.
  *
  * Schedule: 15 * * * *
  */
 
 import { stateAge } from "../helpers/state";
-import { sendTelegram } from "../helpers/telegram";
+import { sendDiscord } from "../helpers/discord";
 
 const OHLCV_URL = "http://localhost:8812/health";
 const DB_CHECK_CMD = `psql "postgresql://trading_app:trading_app_2026@192.168.68.120:5433/trading" -c "SELECT 1" -t -A`;
@@ -65,7 +65,7 @@ async function main() {
       `Strategist Watchdog Alert:\n\n` +
       issues.map((i) => `- ${i}`).join("\n");
     console.error(`[watchdog] Issues found:\n${alert}`);
-    await sendTelegram(alert);
+    await sendDiscord(alert);
   } else {
     console.log("[watchdog] All checks passed");
   }

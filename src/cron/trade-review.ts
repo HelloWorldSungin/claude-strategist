@@ -3,14 +3,14 @@
  *
  * Runs every 6 hours. Spawns Claude to review recent trades,
  * calculate performance metrics, and write state/performance-log.json.
- * Sends Telegram summary for notable findings.
+ * Sends Discord summary for notable findings.
  *
  * Schedule: 30 */6 * * *
  */
 
 import { buildCronPrompt } from "../helpers/prompt-builder";
 import { runClaudeLocal } from "../helpers/claude-runner";
-import { sendTelegram } from "../helpers/telegram";
+import { sendDiscord } from "../helpers/discord";
 
 async function main() {
   console.log(`[trade-review] Starting at ${new Date().toISOString()}`);
@@ -31,7 +31,7 @@ async function main() {
 
   if (result.error) {
     console.error(`[trade-review] Failed: ${result.error}`);
-    await sendTelegram(
+    await sendDiscord(
       `Trade review failed: ${result.error.substring(0, 200)}`
     );
     process.exit(1);
@@ -45,10 +45,10 @@ async function main() {
     output.length > 10 &&
     !output.toLowerCase().includes("no trades to review")
   ) {
-    // Truncate to Telegram-friendly length
+    // Truncate to Discord-friendly length
     const summary =
-      output.length > 3000 ? output.substring(0, 3000) + "..." : output;
-    await sendTelegram(`Trade Review:\n${summary}`);
+      output.length > 1800 ? output.substring(0, 1800) + "..." : output;
+    await sendDiscord(`Trade Review:\n${summary}`);
   }
 
   console.log("[trade-review] Done");

@@ -3,7 +3,7 @@
  *
  * Runs every 2 hours. Spawns Claude to assess BTC/ETH regime,
  * writes state/market-regime.json, logs to strategist.regime_log.
- * Sends Telegram notification if regime changed.
+ * Sends Discord notification if regime changed.
  *
  * Schedule: 0 */2 * * *
  */
@@ -11,7 +11,7 @@
 import { buildCronPrompt } from "../helpers/prompt-builder";
 import { runClaudeLocal } from "../helpers/claude-runner";
 import { readState, writeState } from "../helpers/state";
-import { sendTelegram } from "../helpers/telegram";
+import { sendDiscord } from "../helpers/discord";
 import type { MarketRegimeState } from "../types";
 
 async function main() {
@@ -37,7 +37,7 @@ async function main() {
 
   if (result.error) {
     console.error(`[market-analysis] Failed: ${result.error}`);
-    await sendTelegram(
+    await sendDiscord(
       `Market analysis failed: ${result.error.substring(0, 200)}`
     );
     process.exit(1);
@@ -49,7 +49,7 @@ async function main() {
   const newRegime = await readState<MarketRegimeState>("market-regime.json");
 
   if (newRegime && prevRegimeValue && newRegime.regime !== prevRegimeValue) {
-    await sendTelegram(
+    await sendDiscord(
       `Regime change: ${prevRegimeValue} -> ${newRegime.regime}\n` +
         `BTC: $${newRegime.btc_price?.toLocaleString()} (${newRegime.btc_24h_change >= 0 ? "+" : ""}${newRegime.btc_24h_change?.toFixed(2)}%)\n` +
         `ETH: $${newRegime.eth_price?.toLocaleString()} (${newRegime.eth_24h_change >= 0 ? "+" : ""}${newRegime.eth_24h_change?.toFixed(2)}%)\n` +
