@@ -449,6 +449,11 @@ bot.on("message:photo", async (ctx) => {
 // ============================================================
 
 async function sendResponse(ctx: Context, response: string): Promise<void> {
+  if (!response || response.trim().length === 0) {
+    await ctx.reply("Task completed (no text output from Claude).");
+    return;
+  }
+
   const MAX_LENGTH = 4000;
 
   if (response.length <= MAX_LENGTH) {
@@ -484,6 +489,11 @@ async function sendResponse(ctx: Context, response: string): Promise<void> {
 // ============================================================
 // START
 // ============================================================
+
+// Global error handler — prevent crashes from killing the bot
+bot.catch((err) => {
+  console.error("Bot error:", err.message);
+});
 
 console.log("Starting Claude Master Strategist...");
 console.log(`Authorized user: ${ALLOWED_USER_ID || "ANY (not recommended)"}`);
