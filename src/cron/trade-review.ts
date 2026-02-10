@@ -36,7 +36,7 @@ async function main() {
   );
 
   const result = await withRetry(
-    () => runClaudeLocal(prompt, { timeoutMs: 3 * 60 * 1000 }),
+    () => runClaudeLocal(prompt, { timeoutMs: 5 * 60 * 1000 }),
     { label: "trade-review", maxRetries: 3, baseDelayMs: 5000 }
   );
 
