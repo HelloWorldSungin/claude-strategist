@@ -35,7 +35,7 @@ export async function runClaudeLocal(
   const startTime = Date.now();
   const timeout = options?.timeoutMs || TIMEOUT_MS;
 
-  const args = [CLAUDE_PATH, "-p", prompt, "--output-format", "text", "--dangerously-skip-permissions"];
+  const args = [CLAUDE_PATH, "-p", prompt, "--output-format", "text"];
 
   if (options?.allowedTools) {
     for (const tool of options.allowedTools) {
@@ -146,7 +146,7 @@ export async function runClaudeRemote(
 
   remoteCmd += ` && source /etc/trading-signal-ai.env`;
   remoteCmd += ` && PROMPT=$(cat ${tmpFile}) && rm -f ${tmpFile}`;
-  remoteCmd += ` && claude -p "$PROMPT" --output-format text --dangerously-skip-permissions`;
+  remoteCmd += ` && claude -p "$PROMPT" --output-format text`;
 
   if (options?.allowedTools) {
     for (const tool of options.allowedTools) {
