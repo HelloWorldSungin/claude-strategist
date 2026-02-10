@@ -5,7 +5,7 @@
  * writes state/market-regime.json, logs to strategist.regime_log.
  * Sends Discord notification if regime changed.
  *
- * Schedule: 0 */2 * * *
+ * Schedule: every 2 hours at :00 (see systemd timer)
  */
 
 import { buildCronPrompt } from "../helpers/prompt-builder";

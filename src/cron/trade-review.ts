@@ -6,7 +6,7 @@
  * Sends Discord summary for notable findings.
  * Extracts lessons into strategist.memory table.
  *
- * Schedule: 30 */6 * * *
+ * Schedule: every 6 hours at :30 (see systemd timer)
  */
 
 import { buildCronPrompt } from "../helpers/prompt-builder";
